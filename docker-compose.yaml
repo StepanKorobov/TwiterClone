@@ -1,0 +1,84 @@
+version: '3.12'
+
+services:
+  postgresql:
+    container_name: postgresql
+    image: postgres:latest
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - log_destination=stderr
+      - POSTGRES_DB=${DB_NAME}
+    ports:
+      - "${DB_PORT}:${DB_PORT}"
+    volumes:
+      - ./db/:/var/lib/postgresql/data
+    hostname: ${DB_HOST}
+    networks:
+      - twitter_network
+
+  app:
+    container_name: fastapi
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stop_signal: SIGTERM
+    volumes:
+      - ./app/database/media/user_post_images:/app/database/media/user_post_images
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgresql
+    networks:
+      - twitter_network
+
+  nginx:
+    container_name: nginx
+    image: nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html
+      - ./logs/nginx/error:/var/log/nginx/error
+      - ./logs/nginx/access:/var/log/nginx/access
+      - ./app/database/media/user_post_images:/usr/share/nginx/html/images/user_post_images
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - postgresql
+      - app
+    networks:
+      - twitter_network
+
+  prometheus:
+    image: prom/prometheus:v2.46.0
+    volumes:
+      - ./prometheus/config.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - postgresql
+      - app
+      - nginx
+    networks:
+      - twitter_network
+
+
+  grafana:
+    image: grafana/grafana:5.1.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgresql
+      - app
+      - nginx
+    networks:
+      - twitter_network
+
+
+networks:
+  twitter_network:
+    driver: bridge
+
